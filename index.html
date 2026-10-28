@@ -157,14 +157,14 @@ function render(){
 }
 $("chips").onclick=e=>{const k=e.target.dataset.k;if(k){filter=k;render()}};
 $("cari").oninput=render;
-$("tb").onclick=e=>{const t=e.target;if(t.dataset.e)open(t.dataset.e);if(t.dataset.h){const x=D.indikator.find(i=>i.kode==t.dataset.h);if(confirm(`Hapus indikator ${x.kode}?\nSaran: gunakan status Nonaktif bila indikator sudah pernah dipakai di tes.`)){D.indikator=D.indikator.filter(i=>i!==x);sv();render()}}};
-function open(kode){
+$("tb").onclick=e=>{const t=e.target;if(t.dataset.e)bukaForm(t.dataset.e);if(t.dataset.h){const x=D.indikator.find(i=>i.kode==t.dataset.h);if(confirm(`Hapus indikator ${x.kode}?\nSaran: gunakan status Nonaktif bila indikator sudah pernah dipakai di tes.`)){D.indikator=D.indikator.filter(i=>i!==x);sv();render()}}};
+function bukaForm(kode){
  edit=kode?D.indikator.find(i=>i.kode==kode):null;const x=edit||{mapel:filter=="ALL"?"MTK":filter,materi:"",kode:"",deskripsi:"",bobot:1,aktif:true};
  $("dJudul").textContent=edit?"Ubah indikator":"Tambah indikator";
  $("fMapel").value=x.mapel;$("fMateri").value=x.materi;$("fKode").value=x.kode;$("fKode").disabled=!!edit;$("fDesk").value=x.deskripsi;$("fBobot").value=x.bobot;$("fAktif").checked=x.aktif;$("fErr").textContent="";mat();$("dlg").showModal();
 }
 function mat(){$("dlMateri").innerHTML=[...new Set(D.indikator.filter(i=>i.mapel==$("fMapel").value).map(i=>i.materi))].map(m=>`<option value="${esc(m)}">`).join("")}
-$("fMapel").onchange=mat;$("bTambah").onclick=()=>open();$("fBatal").onclick=()=>$("dlg").close();
+$("fMapel").onchange=mat;$("bTambah").onclick=()=>bukaForm();$("fBatal").onclick=()=>$("dlg").close();
 $("fSimpan").onclick=()=>{
  const o={mapel:$("fMapel").value,materi:$("fMateri").value.trim(),kode:$("fKode").value.trim(),deskripsi:$("fDesk").value.trim(),bobot:parseFloat($("fBobot").value)||1,aktif:$("fAktif").checked};
  if(!o.kode||!o.materi||!o.deskripsi){$("fErr").textContent="Kode, materi, dan deskripsi wajib diisi.";return}
