@@ -75,9 +75,8 @@ h3{margin:18px 0 8px}details.box summary{cursor:pointer}
 <p class="sub" id="ket" style="margin-top:10px"></p>
 </section>
 <section id="v-siswa" hidden><h2>Siswa</h2><p class="sub">Daftar siswa per kelas.</p>
-<div class="bar"><input id="sNama" placeholder="Nama siswa" style="max-width:240px"><input id="sKelas" placeholder="Kelas (mis. 6A)" style="max-width:130px"><button class="p" id="sTambah">+ Tambah</button></div>
-<details class="box"><summary>Tempel daftar siswa (dari Excel)</summary><p class="sub">Satu siswa per baris: Nama, lalu Kelas (dipisah tab atau koma).</p><textarea id="sPaste" rows="5"></textarea><div class="bar" style="margin:8px 0 0"><button id="sImpor">Tambahkan</button></div></details>
-<div class="wrap"><table><thead><tr><th>Nama</th><th>Kelas</th><th></th></tr></thead><tbody id="sTb"></tbody></table></div><p class="sub" id="sKet"></p></section>
+<div class="bar"><button class="p" id="sUnggah">Unggah daftar siswa (Excel/CSV)</button><button id="sTemplate">Unduh template</button><input type="file" id="sFile" accept=".xlsx,.xls,.csv" hidden></div><div id="sImp"></div>
+<div class="wrap"><table><thead><tr><th>No. Absen</th><th>Nama</th><th>Kelas</th><th></th></tr></thead><tbody id="sTb"></tbody></table></div><p class="sub" id="sKet"></p></section>
 <section id="v-tes" hidden><h2>Tes &amp; Butir</h2><p class="sub">Setiap tes memetakan nomor butir soal ke kode indikator. Inilah yang membuat hasil antar tes bisa dibandingkan.</p>
 <div class="bar"><button class="p" id="tBaru">+ Tes baru</button></div>
 <div class="wrap"><table><thead><tr><th>Nama tes</th><th>Mapel</th><th>Tanggal</th><th>Butir</th><th>Terpetakan</th><th>Siswa terinput</th><th></th></tr></thead><tbody id="tTb"></tbody></table></div></section>
@@ -221,16 +220,34 @@ $("bBackup").onclick=()=>{const a=document.createElement("a");a.href=URL.createO
 let cur="kisi";
 function norm(){D.siswa=D.siswa||[];D.tes=D.tes||[];D.hasil=D.hasil||{};D.cfg=Object.assign({m:75,b:50,min:2,w:50,siap:75,hmp:60},D.cfg)}norm();
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-const byKode=(a,b)=>a.kode.localeCompare(b.kode,"id",{numeric:true}),byNama=(a,b)=>(a.kelas||"").localeCompare(b.kelas||"")||a.nama.localeCompare(b.nama);
+const byKode=(a,b)=>a.kode.localeCompare(b.kode,"id",{numeric:true}),byNama=(a,b)=>(a.kelas||"").localeCompare(b.kelas||"")||((a.absen||9999)-(b.absen||9999))||a.nama.localeCompare(b.nama);
 const ind=mp=>D.indikator.filter(i=>i.aktif&&i.mapel==mp).sort(byKode);
 function go(v){cur=v;document.querySelectorAll("main>section").forEach(x=>x.hidden=x.id!="v-"+v);document.querySelectorAll("nav a").forEach(a=>a.className=a.dataset.v==v?"on":"");({kisi:render,siswa:rSiswa,tes:rTes,hasil:rHasil,dasbor:rDasbor,profil:rProfil,atur:rAtur,akses:rAkses})[v]()}
 document.querySelector("nav").onclick=e=>{if(e.target.dataset.v)go(e.target.dataset.v)};
 const kelasOpt=(el,all)=>{const k=el.value,L=[...new Set(D.siswa.map(s=>s.kelas||"-"))].sort();el.innerHTML=L.map(x=>`<option>${esc(x)}</option>`).join("");if(L.includes(k))el.value=k};
 /* Siswa */
-function rSiswa(){const S=[...D.siswa].sort(byNama);$("sTb").innerHTML=S.map(s=>`<tr><td>${esc(s.nama)}</td><td>${esc(s.kelas||"-")}</td><td><button class="d" data-x="${s.id}">Hapus</button></td></tr>`).join("")||`<tr><td colspan="3" class="empty">Belum ada siswa.</td></tr>`;$("sKet").textContent=S.length+" siswa"}
-$("sTambah").onclick=()=>{const n=$("sNama").value.trim();if(!n)return;D.siswa.push({id:uid(),nama:n,kelas:$("sKelas").value.trim()});$("sNama").value="";sv();rSiswa();$("sNama").focus()};
-$("sImpor").onclick=()=>{$("sPaste").value.split(/\r?\n/).forEach(l=>{const[n,k]=l.split(/\t|,/).map(x=>x.trim());if(n&&!D.siswa.some(s=>s.nama==n&&(s.kelas||"")==(k||"")))D.siswa.push({id:uid(),nama:n,kelas:k||""})});$("sPaste").value="";sv();rSiswa()};
+function rSiswa(){const S=[...D.siswa].sort(byNama);$("sTb").innerHTML=S.map(s=>`<tr><td>${s.absen||""}</td><td>${esc(s.nama)}</td><td>${esc(s.kelas||"-")}</td><td><button class="d" data-x="${s.id}">Hapus</button></td></tr>`).join("")||`<tr><td colspan="4" class="empty">Belum ada siswa.</td></tr>`;$("sKet").textContent=S.length+" siswa"}
 $("sTb").onclick=e=>{const id=e.target.dataset.x;if(id&&confirm("Hapus siswa ini beserta hasil tesnya?")){D.siswa=D.siswa.filter(s=>s.id!=id);for(const t in D.hasil)delete D.hasil[t][id];sv();rSiswa()}};
+
+const SK={nama:"nama",namasiswa:"nama",kelas:"kelas",noabsen:"absen",nomorabsen:"absen",absen:"absen"};
+function prosesSiswa(rows){const ok=[],er=[],seen=new Set();let bar=0,upd=0;
+ rows.forEach((r,i)=>{const o={};for(const k in r){const m=SK[k.toLowerCase().replace(/[^a-z]/g,"")];if(m)o[m]=String(r[k]).trim()}
+  if(!Object.values(o).some(v=>v)||/^contoh/i.test(o.nama||""))return;const n=i+2;
+  if(!o.nama)return er.push(`Baris ${n}: nama kosong`);if(!o.kelas)return er.push(`Baris ${n} (${o.nama}): kelas kosong`);
+  const key=(o.nama+"|"+o.kelas).toLowerCase();if(seen.has(key))return er.push(`Baris ${n} (${o.nama}): siswa ganda di dalam file`);seen.add(key);
+  const ex=D.siswa.find(x=>(x.nama+"|"+(x.kelas||"")).toLowerCase()==key);ex?upd++:bar++;
+  ok.push({id:ex?ex.id:uid()+"-"+ok.length,nama:ex?ex.nama:o.nama,kelas:ex?ex.kelas:o.kelas,absen:parseInt(o.absen)||""})});
+ return{ok,er,bar,upd}}
+let sPend=null;
+$("sUnggah").onclick=()=>$("sFile").click();
+$("sFile").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+ try{const wb=XLSX.read(await f.arrayBuffer(),{type:"array"}),ws=wb.Sheets["Siswa"]||wb.Sheets[wb.SheetNames[0]],r=prosesSiswa(XLSX.utils.sheet_to_json(ws,{defval:"",raw:false}));sPend=r.ok;
+  $("sImp").innerHTML=`<div class="box"><b>Pratinjau unggahan: ${esc(f.name)}</b><br>${r.bar} siswa baru, ${r.upd} sudah ada (nomor absen diperbarui), ${r.er.length} baris bermasalah (dilewati). Siswa yang tidak ada di file tidak dihapus.${r.er.length?`<div class="err" style="margin-top:6px">${r.er.slice(0,10).map(esc).join("<br>")}${r.er.length>10?`<br>...dan ${r.er.length-10} lainnya`:""}</div>`:""}<div class="bar" style="margin:10px 0 0"><button class="p" id="siOk" ${r.bar+r.upd?"":"disabled"}>Terapkan</button><button id="siNo">Batal</button></div></div>`;
+  $("siNo").onclick=()=>{sPend=null;$("sImp").innerHTML=""};
+  $("siOk").onclick=()=>{sPend.forEach(o=>{const ex=D.siswa.find(x=>x.id==o.id);ex?Object.assign(ex,o):D.siswa.push(o)});sv();sPend=null;$("sImp").innerHTML="";rSiswa()}}
+ catch(x){alert("File tidak bisa dibaca. Pastikan memakai template siswa (.xlsx/.csv).")}};
+$("sTemplate").onclick=()=>{const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet([["Nama Siswa","Kelas","No. Absen"],["CONTOH Ani Lestari","6A",1]]);ws["!cols"]=[{wch:32},{wch:10},{wch:10}];XLSX.utils.book_append_sheet(wb,ws,"Siswa");
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["PETUNJUK"],["1. Satu baris = satu siswa. Hapus baris CONTOH."],["2. Nama Siswa dan Kelas wajib diisi (tulis kelas seragam, mis. 6A)."],["3. No. Absen opsional, berupa angka."],["4. Untuk menambah siswa baru, unggah file lagi. Siswa dengan nama dan kelas yang sama tidak digandakan, hanya nomor absennya diperbarui. Siswa yang tidak ada di file tidak dihapus."]]),"Petunjuk");XLSX.writeFile(wb,"Template_Siswa.xlsx")};
 /* Tes */
 function rTes(){$("tTb").innerHTML=tesUrut().map(t=>`<tr><td><b>${esc(t.nama)}</b></td><td><span class="tag">${t.mapel}</span></td><td>${t.tanggal||"-"}</td><td>${t.butir.length}</td><td>${t.butir.filter(k=>k).length}</td><td>${Object.keys(D.hasil[t.id]||{}).length}</td><td style="white-space:nowrap"><button data-e="${t.id}">Ubah</button> <button class="d" data-h="${t.id}">Hapus</button></td></tr>`).join("")||`<tr><td colspan="7" class="empty">Belum ada tes. Klik "Tes baru".</td></tr>`}
 $("tTb").onclick=e=>{const t=e.target;if(t.dataset.e)openTes(t.dataset.e);if(t.dataset.h&&confirm("Hapus tes ini beserta semua hasilnya?")){D.tes=D.tes.filter(x=>x.id!=t.dataset.h);delete D.hasil[t.dataset.h];sv();rTes()}};
