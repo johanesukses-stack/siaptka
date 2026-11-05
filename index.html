@@ -77,11 +77,11 @@ h3{margin:18px 0 8px}details.box summary{cursor:pointer}
 <section id="v-siswa" hidden><h2>Siswa</h2><p class="sub">Daftar siswa per kelas.</p>
 <div class="bar"><button class="p" id="sUnggah">Unggah daftar siswa (Excel/CSV)</button><button id="sTemplate">Unduh template</button><input type="file" id="sFile" accept=".xlsx,.xls,.csv" hidden></div><div id="sImp"></div>
 <div class="wrap"><table><thead><tr><th>No. Absen</th><th>Nama</th><th>Kelas</th><th></th></tr></thead><tbody id="sTb"></tbody></table></div><p class="sub" id="sKet"></p></section>
-<section id="v-tes" hidden><h2>Tes &amp; Butir</h2><p class="sub">Setiap tes memetakan nomor butir soal ke kode indikator. Inilah yang membuat hasil antar tes bisa dibandingkan.</p>
-<div class="bar"><button class="p" id="tBaru">+ Tes baru</button></div>
+<section id="v-tes" hidden><h2>Tes &amp; Butir</h2><p class="sub">Setiap tes memetakan nomor butir soal ke kode indikator. Cukup unggah file soal yang sudah memuat materi/indikator per nomor, aplikasi mencocokkan dengan kisi-kisi dan mengisinya otomatis.</p>
+<div class="bar"><button class="p" id="tUnggah">Unggah file soal (otomatis)</button><button id="tBaru">+ Tes baru (manual)</button><button id="tTemplate">Unduh template soal</button><input type="file" id="tFile" accept=".xlsx,.xls,.csv" hidden></div><div id="tImp"></div>
 <div class="wrap"><table><thead><tr><th>Nama tes</th><th>Mapel</th><th>Tanggal</th><th>Butir</th><th>Terpetakan</th><th>Siswa terinput</th><th></th></tr></thead><tbody id="tTb"></tbody></table></div></section>
-<section id="v-hasil" hidden><h2>Input Hasil</h2><p class="sub">Ketik 1 (benar), 0 (salah), atau - (kosong) per butir; kursor pindah otomatis. Bisa juga tempel blok 1/0 dari Excel. Tersimpan otomatis.</p>
-<div class="bar"><select id="hTes" style="width:auto"></select><select id="hKelas" style="width:auto"></select></div><div class="wrap" id="hGrid"></div></section>
+<section id="v-hasil" hidden><h2>Input Hasil</h2><p class="sub">Ketik 1 (benar), 0 (salah), atau - (kosong) per butir; kursor pindah otomatis. Bisa juga tempel blok 1/0 dari Excel, atau unggah file hasil sekaligus (matriks siswa x nomor). Tersimpan otomatis.</p>
+<div class="bar"><select id="hTes" style="width:auto"></select><select id="hKelas" style="width:auto"></select><button class="p" id="hUnggah">Unggah hasil (Excel/CSV)</button><button id="hTemplate">Unduh template hasil</button><input type="file" id="hFile" accept=".xlsx,.xls,.csv" hidden></div><div id="hImp"></div><div class="wrap" id="hGrid"></div></section>
 <section id="v-dasbor" hidden><h2>Dasbor Kelas</h2><div class="bar noprint"><select id="dKelas" style="width:auto"></select><select id="dMapel" style="width:auto"><option value="MTK">TKA Matematika</option><option value="BIN">TKA Bahasa Indonesia</option><option value="IPAS">TKAD IPAS</option></select><button onclick="window.print()">Cetak</button></div><div id="dOut"></div></section>
 <section id="v-profil" hidden><h2>Profil Siswa</h2><div class="bar noprint"><select id="pSis" style="width:auto;max-width:320px"></select><button onclick="window.print()">Cetak / simpan PDF</button></div><div id="pOut"></div></section>
 <section id="v-atur" hidden><h2>Pengaturan</h2><p class="sub">Ambang batas penilaian (dalam persen).</p><div class="box" style="max-width:480px">
@@ -322,6 +322,188 @@ let GURU=[],cloud={};
 function rAkses(){$("aTb").innerHTML=GURU.map(g=>`<tr><td>${esc(g.email)}</td><td>${g.admin?"Admin":(g.mapel||[]).map(m=>MP[m]).join(", ")||"-"}</td><td><button class="d" data-x="${esc(g.email)}">Hapus</button></td></tr>`).join("")||`<tr><td colspan="3" class="empty">Belum ada guru terdaftar.</td></tr>`}
 $("aSimpan").onclick=async()=>{const e=$("aEmail").value.trim().toLowerCase();if(!/^\S+@\S+$/.test(e))return alert("Email tidak valid.");await cloud.save(e,{admin:$("aAdm").checked,mapel:[...document.querySelectorAll(".aM:checked")].map(x=>x.value)});$("aEmail").value=""};
 $("aTb").onclick=e=>{const x=e.target.dataset.x;if(x&&confirm("Hapus akses "+x+"?"))cloud.del(x)};
+/* ===== Unggah otomatis: butir -> indikator, dan hasil siswa ===== */
+/*PURE_START*/
+const Un={};
+Un.n=s=>String(s==null?"":s).normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[\u2212\u2013\u2014]/g,"-").replace(/[^a-z0-9]+/g," ").trim();
+Un.al=s=>Un.n(s).replace(/ /g,"");
+Un.split=s=>{s=String(s==null?"":s).replace(/\s+/g," ").trim();const m=/\[([^\]]+)\]\s*$/.exec(s);return{teks:m?s.slice(0,m.index).trim():s,dom:m?m[1].trim():""}};
+Un.tri=s=>{s=" "+s+" ";const o=new Map;for(let i=0;i<s.length-2;i++){const g=s.substr(i,3);o.set(g,(o.get(g)||0)+1)}return o};
+Un.dice=(a,b)=>{if(!a||!b)return 0;const A=Un.tri(a),B=Un.tri(b);let x=0,ta=0,tb=0;A.forEach((v,k)=>{ta+=v;if(B.has(k))x+=Math.min(v,B.get(k))});B.forEach(v=>tb+=v);return 2*x/(ta+tb)};
+/* Cocokkan satu butir (teks materi/indikator atau kode) ke daftar indikator L */
+Un.match=(raw,kode,dom,L)=>{
+ const kk=[kode,raw].map(x=>String(x==null?"":x).trim().toLowerCase()).filter(x=>x);
+ for(const k of kk){const x=L.find(i=>i.kode.toLowerCase()==k);if(x)return{kode:x.kode,st:"pasti",sk:1}}
+ const sp=Un.split(raw),t=Un.n(sp.teks),dm=sp.dom||dom||"";
+ if(!t)return{kode:"",st:"kosong",sk:0};
+ let C=L;if(dm){const f=L.filter(i=>Un.n(i.materi)==Un.n(dm));if(f.length)C=f}
+ const R=C.map(i=>{const d=Un.n(i.deskripsi);let s=d==t?1:Un.dice(d,t);
+  if(d!=t&&d&&(d.includes(t)||t.includes(d))&&Math.min(d.length,t.length)>=.8*Math.max(d.length,t.length))s=Math.max(s,.95);return{i,s}}).sort((a,b)=>b.s-a.s);
+ if(!R.length)return{kode:"",st:"tidak",sk:0};
+ const a=R[0],b=R[1]?R[1].s:0,sama=R.filter(x=>x.s==1).length;
+ if(a.s==1)return{kode:a.i.kode,st:sama==1?"pasti":"cek",sk:1};
+ if(a.s>=.85&&a.s-b>=.04)return{kode:a.i.kode,st:"mirip",sk:a.s};
+ if(a.s>=.6)return{kode:a.i.kode,st:"cek",sk:a.s};
+ return{kode:"",st:"tidak",sk:a.s}};
+Un.rows=ws=>XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true});
+Un.hdr=(A,ok)=>{for(let r=0;r<Math.min(A.length,25);r++){if(ok((A[r]||[]).map(Un.al)))return r}return-1};
+/* Baca daftar butir (nomor + materi/indikator/kode) dari file soal, rekap, atau template */
+Un.bacaSoal=wb=>{
+ const NO=["no","nomor","nomorbutir","nomorsoal","nosoal","nobutir","butir","nomorurut"],
+  TX=["deskripsiindikator","deskripsi","indikator","materiindikator","capaianindikator","materi","capaian"],
+  KD=["kodeindikator","kode"];
+ const pref=["soal","rekap per nomor","butir"],nm0=wb.SheetNames.slice().sort((a,b)=>{const f=x=>{const i=pref.indexOf(x.toLowerCase());return i<0?9:i};return f(a)-f(b)});
+ let res={sheet:"",butir:[],pakets:[],meta:null};
+ const pk=wb.SheetNames.find(x=>x.toLowerCase()=="paket");
+ if(pk){const A=Un.rows(wb.Sheets[pk]),h=Un.hdr(A,al=>al.includes("kode")&&al.includes("nama"));
+  if(h>=0){const al=A[h].map(Un.al);for(let r=h+1;r<A.length;r++){const k=String(A[r][al.indexOf("kode")]||"").trim();if(k)res.pakets.push({kode:k,mapel:String(A[r][al.indexOf("mapel")]||""),nama:String(A[r][al.indexOf("nama")]||"").trim()})}}}
+ for(const sn of nm0){
+  const A=Un.rows(wb.Sheets[sn]),h=Un.hdr(A,al=>al.some(x=>NO.includes(x))&&al.some(x=>TX.includes(x)||KD.includes(x)));
+  if(h<0)continue;
+  const al=A[h].map(Un.al),col=L=>{for(const k of L){const i=al.indexOf(k);if(i>=0)return i}return-1};
+  const noC=col(NO),txC=col(TX),kdC=col(KD),tpC=col(["tipe","tipesoal","bentuk"]),pkC=col(["paket","kodepaket"]),
+   dmC=txC>=0&&al[txC]!="materi"?al.indexOf("materi"):-1,out=[];
+  for(let r=h+1;r<A.length;r++){const w=A[r]||[],no=Number(String(w[noC]).replace(",","."));if(!Number.isInteger(no)||no<1)continue;
+   const teks=txC>=0?String(w[txC]==null?"":w[txC]).trim():"",kode=kdC>=0?String(w[kdC]==null?"":w[kdC]).trim():"";if(!teks&&!kode)continue;
+   out.push({no,teks,kode,dom:dmC>=0?String(w[dmC]||"").trim():"",tipe:tpC>=0?String(w[tpC]||"").trim():"",paket:pkC>=0?String(w[pkC]||"").trim():""})}
+  if(!out.length)continue;
+  res.sheet=sn;res.butir=out;
+  const t=String((A[1]||[])[0]||"")+" "+String((A[0]||[])[0]||""),m=/Paket:\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*(.+?)(?:\s{3,}|$)/.exec(t);
+  if(m)res.meta={kode:m[1].trim(),mapel:m[2].trim(),nama:m[3].trim()};
+  break}
+ return res};
+Un.sel=v=>{if(v===true)return"1";if(v===false)return"0";const s=String(v==null?"":v).trim().replace(",",".");if(s===""||s=="-")return"-";const x=parseFloat(s);if(isNaN(x))return"-";return x>=.999?"1":"0"};
+/* Baca hasil siswa: matriks siswa x nomor (1/0), atau sheet Hasil dari aplikasi ujian (skor_json) */
+Un.bacaHasil=(wb,paket)=>{
+ const nms=wb.SheetNames.slice().sort((a,b)=>(/matriks/i.test(b)?1:0)-(/matriks/i.test(a)?1:0));
+ for(const sn of nms){
+  const A=Un.rows(wb.Sheets[sn]),h=Un.hdr(A,al=>al.some(x=>x=="nama"||x=="namasiswa")&&al.filter(x=>/^\d+$/.test(x)).length>=3);
+  if(h<0)continue;
+  const al=A[h].map(Un.al),nos={};al.forEach((x,c)=>{if(/^\d+$/.test(x)&&+x>0&&+x<=200)nos[c]=+x});
+  const nC=al.findIndex(x=>x=="nama"||x=="namasiswa"),kC=al.findIndex(x=>x=="kelas"||x=="rombel"),n=Math.max(...Object.values(nos)),rows=[];
+  for(let r=h+1;r<A.length;r++){const w=A[r]||[],nama=String(w[nC]==null?"":w[nC]).trim();if(!nama||/^(jumlah|%|kategori|total|rata)/i.test(nama))continue;
+   const ch=Array(n).fill("-");let any=false;for(const c in nos){const x=Un.sel(w[c]);if(x!="-")any=true;ch[nos[c]-1]=x}
+   if(any)rows.push({nama,kelas:kC>=0?String(w[kC]||"").trim():"",v:ch.join("")})}
+  if(rows.length)return{src:"matriks",sheet:sn,n,rows,pakets:[]}}
+ for(const sn of nms){
+  const A=Un.rows(wb.Sheets[sn]),h=Un.hdr(A,al=>al.includes("skorjson")&&al.includes("nama"));if(h<0)continue;
+  const al=A[h].map(Un.al),nC=al.indexOf("nama"),kC=al.indexOf("kelas"),pC=al.indexOf("paket"),sC=al.indexOf("skorjson"),dC=al.indexOf("selesai"),pakets=[],M=new Map;let n=0;
+  for(let r=h+1;r<A.length;r++){const w=A[r]||[],nama=String(w[nC]==null?"":w[nC]).trim();if(!nama)continue;const pv=pC>=0?String(w[pC]||"").trim():"";if(pv&&!pakets.includes(pv))pakets.push(pv);
+   if(paket&&pC>=0&&pv.toLowerCase()!=String(paket).toLowerCase())continue;if(/percobaan/i.test(nama))continue;
+   let j;try{j=JSON.parse(w[sC])}catch(e){continue}if(!j||typeof j!="object")continue;
+   const key=Un.n(nama)+"|"+String(w[kC]||"").trim().toLowerCase(),tm=Number(w[dC])||0,o=M.get(key);if(o&&o.tm>tm)continue;
+   Object.keys(j).forEach(k=>{if(+k>n)n=+k});M.set(key,{nama,kelas:kC>=0?String(w[kC]||"").trim():"",j,tm})}
+  const rows=[...M.values()].map(o=>({nama:o.nama,kelas:o.kelas,v:Array.from({length:n},(_,i)=>Un.sel(o.j[i+1])).join("")}));
+  if(rows.length)return{src:"hasil",sheet:sn,n,rows,pakets}}
+ return null};
+/* Cocokkan nama di file dengan daftar siswa (nama + kelas, lalu nama saja, lalu urutan kata dibalik) */
+Un.cocokSiswa=(r,S)=>{const kl=x=>String(x||"").toLowerCase().replace(/\s/g,""),nk=Un.n(r.nama),tk=x=>Un.n(x).split(" ").sort().join(" ");
+ let c=S.filter(s=>Un.n(s.nama)==nk&&(!r.kelas||kl(s.kelas)==kl(r.kelas)));if(c.length==1)return c[0];
+ if(!c.length){c=S.filter(s=>Un.n(s.nama)==nk);if(c.length==1)return c[0]}
+ c=S.filter(s=>tk(s.nama)==tk(r.nama)&&(!r.kelas||kl(s.kelas)==kl(r.kelas)));return c.length==1?c[0]:null};
+/*PURE_END*/
+const hariIni=()=>new Date().toISOString().slice(0,10);
+const BDG={pasti:["Pasti","g"],mirip:["Mirip","g"],cek:["Cek dulu","y"],tidak:["Tidak ditemukan","r"],kosong:["Kosong","n"],manual:["Dipilih manual","g"]};
+function terapkanHasil(t,rows,tambah){
+ const h=D.hasil[t.id]=D.hasil[t.id]||{},len=t.butir.length;let ok=0,baru=0;const lewat=[];
+ rows.forEach((r,i)=>{let s=Un.cocokSiswa(r,D.siswa);
+  if(!s){if(tambah&&r.kelas&&!/percobaan/i.test(r.nama)){s={id:uid()+"-"+i,nama:r.nama.trim(),kelas:String(r.kelas).trim(),absen:""};D.siswa.push(s);baru++}else{lewat.push(r.nama);return}}
+  h[s.id]=r.v.padEnd(len,"-").slice(0,len);ok++});
+ return{ok,baru,lewat}}
+function cocokInfo(rows){const a=[],b=[];rows.forEach(r=>(Un.cocokSiswa(r,D.siswa)?a:b).push(r));return{a,b}}
+/* --- Tes & Butir: unggah file soal --- */
+let UW=null;
+function uwSet(pk,first){const u=UW,S=u.s,meta=S.pakets.find(p=>p.kode==pk)||S.meta||{};
+ u.pk=pk;u.mp=nm(meta.mapel)||nm(pk)||u.mp||"MTK";u.nama=meta.nama||pk||u.f.replace(/\.\w+$/,"");
+ u.tgt=(D.tes.find(t=>t.mapel==u.mp&&t.nama.toLowerCase()==u.nama.toLowerCase())||{}).id||"";
+ uwMatch();u.hasil=Un.bacaHasil(u.wb,pk)}
+function uwMatch(){const u=UW,L=ind(u.mp);u.m=u.s.butir.filter(b=>(b.paket||"")==u.pk).sort((a,b)=>a.no-b.no).map(b=>({no:b.no,teks:b.teks,...Un.match(b.teks,b.kode,b.dom,L)}))}
+$("tUnggah").onclick=()=>$("tFile").click();
+$("tFile").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+ try{const wb=XLSX.read(await f.arrayBuffer(),{type:"array"}),s=Un.bacaSoal(wb);
+  if(!s.butir.length){alert("Daftar nomor butir tidak ditemukan. Pastikan ada kolom No dan Materi (atau Kode Indikator), misalnya sheet \"Soal\" dari file ujian, sheet \"Rekap per Nomor\", atau pakai template.");return}
+  UW={f:f.name,wb,s,pk:"",mp:"MTK",nama:"",tgl:hariIni(),tgt:"",m:[],hasil:null,cH:true,cT:true};
+  const ps=[...new Set(s.butir.map(b=>b.paket||""))];let best=ps[0],bs=-1;
+  ps.forEach(p=>{const mt=s.pakets.find(x=>x.kode==p)||s.meta||{},mp=nm(mt.mapel)||nm(p)||"MTK",L=ind(mp);if(!L.length)return;
+   const sc=s.butir.filter(b=>(b.paket||"")==p).reduce((a,b)=>{const r=Un.match(b.teks,b.kode,b.dom,L);return a+(r.st=="pasti"||r.st=="mirip"?1:0)},0);if(sc>bs){bs=sc;best=p}});
+  uwSet(best);uwRender()}
+ catch(x){alert("File tidak bisa dibaca. Pakai file .xlsx/.csv (file soal, rekap, atau template).")}};
+function uwRender(){const u=UW,el=$("tImp");if(!u){el.innerHTML="";return}
+ const ps=[...new Set(u.s.butir.map(b=>b.paket||""))],L=ind(u.mp),c={};u.m.forEach(x=>c[x.st]=(c[x.st]||0)+1);
+ const opt=k=>`<option value="">(belum dipetakan)</option>`+L.map(x=>`<option value="${esc(x.kode)}" ${x.kode==k?"selected":""}>${esc(x.kode)} - ${esc(x.deskripsi.slice(0,70))}</option>`).join("");
+ const H=u.hasil&&u.hasil.rows.length?cocokInfo(u.hasil.rows):null;
+ el.innerHTML=`<div class="box"><b>Pratinjau unggahan: ${esc(u.f)}</b> <span class="sub">(dibaca dari sheet "${esc(u.s.sheet)}")</span>
+ <div class="bar" style="margin:10px 0 6px;align-items:flex-end">
+ ${ps.length>1?`<div><label>Paket di file</label><select id="uwPk" style="width:auto">${ps.map(p=>{const m=u.s.pakets.find(x=>x.kode==p);return `<option value="${esc(p)}" ${p==u.pk?"selected":""}>${esc(p||"-")}${m?" - "+esc(m.nama):""} (${u.s.butir.filter(b=>(b.paket||"")==p).length} butir)</option>`}).join("")}</select></div>`:""}
+ <div><label>Mapel</label><select id="uwMp" style="width:auto">${Object.entries(MP).map(([k,v])=>`<option value="${k}" ${k==u.mp?"selected":""}>${v}</option>`).join("")}</select></div>
+ <div><label>Simpan ke</label><select id="uwTg" style="width:auto"><option value="">Tes baru</option>${D.tes.filter(t=>t.mapel==u.mp).map(t=>`<option value="${t.id}" ${t.id==u.tgt?"selected":""}>Perbarui: ${esc(t.nama)}</option>`).join("")}</select></div>
+ <div style="flex:1;min-width:220px"><label>Nama tes</label><input id="uwNm" value="${esc(u.nama)}"></div>
+ <div><label>Tanggal</label><input id="uwTl" type="date" value="${esc(u.tgl)}" style="width:auto"></div></div>
+ ${L.length?"":`<p class="err">Belum ada indikator aktif untuk ${MP[u.mp]}. Unggah kisi-kisi dulu di menu Kisi-kisi Indikator.</p>`}
+ <p style="margin:6px 0">${u.m.length} butir: <b>${(c.pasti||0)+(c.manual||0)}</b> pasti, <b>${c.mirip||0}</b> mirip, <b>${c.cek||0}</b> perlu dicek, <b>${c.tidak||0}</b> tidak ditemukan. Baris kuning/merah bisa diperbaiki lewat daftar pilihan.</p>
+ <div class="wrap" style="max-height:340px;overflow:auto"><table style="min-width:700px"><thead><tr><th>No</th><th>Materi di file</th><th>Indikator di kisi-kisi</th><th>Kecocokan</th></tr></thead><tbody>${u.m.map((x,i)=>`<tr><td>${x.no}</td><td>${esc(x.teks.slice(0,120))}</td><td><select data-i="${i}">${opt(x.kode)}</select></td><td class="${BDG[x.st][1]}" id="uwB${i}">${BDG[x.st][0]}</td></tr>`).join("")}</tbody></table></div>
+ ${H?`<div style="margin-top:10px"><b>Hasil siswa ikut terbaca:</b> ${H.a.length+H.b.length} siswa x ${u.hasil.n} nomor (sheet "${esc(u.hasil.sheet)}"). ${H.a.length} cocok dengan daftar siswa, ${H.b.length} belum ada.<br>
+ <label style="display:inline"><input type="checkbox" id="uwH" ${u.cH?"checked":""} style="width:auto"> Impor juga hasil siswa ke tes ini</label><br>
+ <label style="display:inline"><input type="checkbox" id="uwT" ${u.cT?"checked":""} style="width:auto"> Tambahkan siswa yang belum ada ke menu Siswa (kelas dari file)</label></div>`:""}
+ <div class="bar" style="margin:12px 0 0"><button class="p" id="uwOk" ${L.length&&u.m.length?"":"disabled"}>${u.tgt?"Perbarui tes":"Buat tes"}</button><button id="uwNo">Batal</button></div></div>`}
+$("tImp").onchange=e=>{const t=e.target,u=UW;if(!u)return;
+ if(t.dataset.i!=null){const x=u.m[+t.dataset.i];x.kode=t.value;x.st=t.value?"manual":"tidak";const b=$("uwB"+t.dataset.i);b.textContent=BDG[x.st][0];b.className=BDG[x.st][1];return}
+ if(t.id=="uwPk"){uwSet(t.value);uwRender()}
+ else if(t.id=="uwMp"){u.mp=t.value;u.tgt="";uwMatch();uwRender()}
+ else if(t.id=="uwTg"){u.tgt=t.value;const x=D.tes.find(y=>y.id==t.value);if(x){u.nama=x.nama;u.tgl=x.tanggal||u.tgl}uwRender()}
+ else if(t.id=="uwNm")u.nama=t.value;else if(t.id=="uwTl")u.tgl=t.value;else if(t.id=="uwH")u.cH=t.checked;else if(t.id=="uwT")u.cT=t.checked};
+$("tImp").onclick=e=>{const u=UW;if(!u)return;
+ if(e.target.id=="uwNo"){UW=null;$("tImp").innerHTML=""}
+ if(e.target.id=="uwOk"){const nama=(u.nama||"").trim();if(!nama)return alert("Nama tes wajib diisi.");
+  const N=Math.max(...u.m.map(x=>x.no)),B2=Array(N).fill("");u.m.forEach(x=>B2[x.no-1]=x.kode||"");
+  const kos=B2.filter(k=>!k).length;if(kos&&!confirm(kos+" butir belum dipetakan ke indikator dan tidak akan dihitung. Lanjutkan?"))return;
+  let t=u.tgt?D.tes.find(y=>y.id==u.tgt):null;
+  if(t){Object.assign(t,{nama,mapel:u.mp,tanggal:u.tgl,butir:B2});const h=D.hasil[t.id]||{};for(const s in h)h[s]=h[s].padEnd(N,"-").slice(0,N)}
+  else{t={id:uid(),nama,mapel:u.mp,tanggal:u.tgl,butir:B2};D.tes.push(t)}
+  let info=`Tes "${esc(nama)}" tersimpan: ${N-kos} dari ${N} butir terpetakan ke indikator.`;
+  if(u.cH&&u.hasil&&u.hasil.rows.length){const r=terapkanHasil(t,u.hasil.rows,u.cT);info+=` Hasil ${r.ok} siswa terimpor (${r.baru} siswa baru ditambahkan)${r.lewat.length?`, ${r.lewat.length} dilewati karena tidak ada di daftar siswa: ${esc(r.lewat.slice(0,5).join(", "))}${r.lewat.length>5?", ...":""}`:""}.`}
+  sv();UW=null;rTes();$("tImp").innerHTML=`<div class="box">${info} <button id="uwNo" style="margin-left:8px">Tutup</button></div>`}};
+$("tTemplate").onclick=()=>{const wb=XLSX.utils.book_new(),n=30,A=[["No","Materi / Deskripsi Indikator","Kode Indikator (opsional, boleh dikosongkan)"]];
+ for(let i=1;i<=n;i++)A.push([i,"",""]);const ws=XLSX.utils.aoa_to_sheet(A);ws["!cols"]=[{wch:6},{wch:90},{wch:26}];XLSX.utils.book_append_sheet(wb,ws,"Butir");
+ const I=[["Mapel","Materi","Kode Indikator","Deskripsi Indikator"],...D.indikator.filter(i=>i.aktif).sort((a,b)=>a.mapel.localeCompare(b.mapel)||byKode(a,b)).map(i=>[i.mapel,i.materi,i.kode,i.deskripsi])];
+ const w2=XLSX.utils.aoa_to_sheet(I);w2["!cols"]=[{wch:8},{wch:28},{wch:16},{wch:90}];XLSX.utils.book_append_sheet(wb,w2,"Daftar Indikator");
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["PETUNJUK"],["1. Sheet Butir: satu baris = satu nomor soal. Isi kolom B dengan materi/deskripsi indikator soal itu (boleh disalin dari file soal; tulisan seperti [Bilangan] di akhir ikut dibaca), ATAU isi kolom C dengan kode indikator."],["2. Aplikasi mencocokkan otomatis dengan kisi-kisi. Yang kurang yakin ditandai dan bisa dikoreksi di pratinjau sebelum disimpan."],["3. Tidak perlu memakai template ini jika sudah punya file soal dengan kolom No dan Materi (mis. sheet Soal dari file ujian atau sheet Rekap per Nomor): unggah langsung."],["4. Sheet Daftar Indikator hanya contekan kode dan deskripsi dari kisi-kisi saat ini."]]),"Petunjuk");
+ XLSX.writeFile(wb,"Template_Butir_Soal.xlsx")};
+/* --- Input Hasil: unggah matriks hasil --- */
+let HU=null;
+$("hUnggah").onclick=()=>{if(!D.tes.length)return alert("Buat tes dulu di menu Tes & Butir (bisa lewat unggah file soal).");$("hFile").click()};
+$("hFile").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+ try{const wb=XLSX.read(await f.arrayBuffer(),{type:"array"}),h=Un.bacaHasil(wb,"");
+  if(!h){alert("Matriks hasil tidak ditemukan. Pastikan ada kolom Nama dan kolom nomor soal 1, 2, 3, ... berisi 1 (benar) / 0 (salah), atau pakai template.");return}
+  HU={f:f.name,wb,pk:"",tambah:true};
+  if(h.pakets.length){const t=D.tes.find(x=>x.id==$("hTes").value);HU.pk=h.pakets.find(p=>t&&nm(p)==t.mapel)||h.pakets[0]}
+  huHitung();huRender()}
+ catch(x){alert("File tidak bisa dibaca. Pakai file .xlsx/.csv (matriks hasil atau template).")}};
+function huHitung(){HU.h=Un.bacaHasil(HU.wb,HU.pk)}
+function huRender(){const u=HU,el=$("hImp");if(!u){el.innerHTML="";return}
+ const t=D.tes.find(x=>x.id==$("hTes").value),h=u.h;if(!t||!h){el.innerHTML="";return}
+ const I=cocokInfo(h.rows),len=t.butir.length;
+ el.innerHTML=`<div class="box"><b>Pratinjau hasil: ${esc(u.f)}</b> <span class="sub">(sheet "${esc(h.sheet)}")</span><br>
+ Akan diisikan ke tes <b>${esc(t.nama)}</b> (${len} butir). Terbaca ${h.rows.length} siswa x ${h.n} nomor. ${I.a.length} cocok dengan daftar siswa, ${I.b.length} belum ada${I.b.length?`: ${esc(I.b.slice(0,6).map(r=>r.nama).join(", "))}${I.b.length>6?", ...":""}`:""}.
+ ${h.n!=len?`<div class="err">Jumlah nomor di file (${h.n}) berbeda dengan jumlah butir tes (${len}). ${h.n>len?"Nomor kelebihan diabaikan.":"Nomor yang tidak ada di file dibiarkan kosong."} Pastikan tes yang dipilih benar.</div>`:""}
+ ${h.pakets.length>1?`<div class="bar" style="margin:8px 0 0"><label style="margin:0">Paket di file:</label><select id="huPk" style="width:auto">${h.pakets.map(p=>`<option ${p==u.pk?"selected":""}>${esc(p)}</option>`).join("")}</select></div>`:""}
+ <label style="display:inline-block;margin-top:8px"><input type="checkbox" id="huT" ${u.tambah?"checked":""} style="width:auto"> Tambahkan siswa yang belum ada ke menu Siswa (kelas dari file)</label>
+ <p class="sub" style="margin:6px 0 0">Hasil siswa yang sudah ada untuk tes ini akan ditimpa oleh isi file. Salah, kosong, dan benar sebagian dihitung 0.</p>
+ <div class="bar" style="margin:10px 0 0"><button class="p" id="huOk" ${h.rows.length?"":"disabled"}>Terapkan</button><button id="huNo">Batal</button></div></div>`}
+$("hImp").onchange=e=>{const t=e.target;if(!HU)return;if(t.id=="huPk"){HU.pk=t.value;huHitung();huRender()}if(t.id=="huT")HU.tambah=t.checked};
+$("hImp").onclick=e=>{if(!HU)return;
+ if(e.target.id=="huNo"){HU=null;$("hImp").innerHTML=""}
+ if(e.target.id=="huOk"){const t=D.tes.find(x=>x.id==$("hTes").value);if(!t)return;const r=terapkanHasil(t,HU.h.rows,HU.tambah);sv();const f=HU.f;HU=null;
+  $("hImp").innerHTML=`<div class="box">Hasil dari ${esc(f)} masuk ke tes <b>${esc(t.nama)}</b>: ${r.ok} siswa terimpor, ${r.baru} siswa baru ditambahkan${r.lewat.length?`, ${r.lewat.length} dilewati (tidak ada di daftar siswa): ${esc(r.lewat.slice(0,6).join(", "))}${r.lewat.length>6?", ...":""}`:""}. <button id="huNo" style="margin-left:8px">Tutup</button></div>`;
+  kelasOpt($("hKelas"));gHasil()}};
+$("hTes").addEventListener("change",()=>{if(HU)huRender()});
+$("hTemplate").onclick=()=>{const t=D.tes.find(x=>x.id==$("hTes").value);if(!t)return alert("Buat tes dulu di menu Tes & Butir.");
+ const n=t.butir.length,A=[["No","Nama","Kelas",...Array.from({length:n},(_,i)=>i+1)]];
+ [...D.siswa].sort(byNama).forEach((s,i)=>A.push([i+1,s.nama,s.kelas||"",...Array(n).fill("")]));
+ const ws=XLSX.utils.aoa_to_sheet(A);ws["!cols"]=[{wch:5},{wch:36},{wch:8},...Array(n).fill({wch:4})];const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Hasil");
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["PETUNJUK"],["1. Satu baris = satu siswa, sudah terisi dari menu Siswa. Kolom 1, 2, 3, ... = nomor soal."],["2. Isi 1 jika benar, 0 jika salah, kosong atau - jika tidak dikerjakan."],["3. Cukup tempel blok angka dari Excel hasil koreksi. Nama dan kelas dipakai untuk mencocokkan siswa."],["4. Jangan ubah tulisan judul kolom (Nama, Kelas, dan angka nomor)."],["5. File hasil analisis tryout (sheet Matriks 0-1) dan sheet Hasil dari aplikasi ujian online juga bisa diunggah langsung tanpa template ini."]]),"Petunjuk");
+ XLSX.writeFile(wb,"Template_Hasil_"+t.nama.replace(/[^\w]+/g,"_")+".xlsx")};
+
 go("kisi");
 </script>
 <script type="module">
